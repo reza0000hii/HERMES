@@ -253,6 +253,10 @@
       1785040095000000000,
       2336
     ],
+    "hermes-automation/SKILL.md": [
+      1785163164728414747,
+      2718
+    ],
     "mlops/DESCRIPTION.md": [
       1785040095000000000,
       162
@@ -872,6 +876,19 @@
         "macos",
         "windows"
       ],
+      "conditions": {
+        "fallback_for_toolsets": [],
+        "requires_toolsets": [],
+        "fallback_for_tools": [],
+        "requires_tools": []
+      }
+    },
+    {
+      "skill_name": "hermes-automation",
+      "category": "hermes-automation",
+      "frontmatter_name": "hermes-automation",
+      "description": "Cron jobs, backups, monitoring, and reminders patterns.",
+      "platforms": [],
       "conditions": {
         "fallback_for_toolsets": [],
         "requires_toolsets": [],

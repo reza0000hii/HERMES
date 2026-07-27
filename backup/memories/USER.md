@@ -1,0 +1,3 @@
+Name: Reza (رضا). Forex & crypto trader. Interested in: financial markets news, Iran news, war & its market impact, foreign cinema news. Language: Farsi. Style: concise/short responses.
+§
+Preferences: (1) House of the Dragon & Game of Thrones - notify on new episodes/seasons. (2) Popular new movies - notify. (3) High-impact USD/EUR events (rates, inflation) - daily 10AM if important. (4) Iran-US war important news - notify. (5) PropFundingX news - notify. Style: auto-send when news drops, concise.
