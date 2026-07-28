@@ -12,7 +12,7 @@ Token: Classic PAT (ghp_...)
 ### Files Excluded (GitHub Push Protection)
 state.db contained PAT strings and was blocked by GH013. Added to .gitignore.
 
-### Cron Jobs Created (Final State)
+### Cron Jobs Created (Final State - Updated 2026-07-28)
 | Job | ID | Schedule |
 |-----|----|----------|
 | Hermes Backup | 56ca43b8f22c | every 12h |
@@ -21,8 +21,23 @@ state.db contained PAT strings and was blocked by GH013. Added to .gitignore.
 | Iran-US War News | f7408db9f8a0 | daily 11PM Iran (19:30 UTC) |
 | Rent/Shop Reminder (Shamsi 27th) | 19fbca5b1a0b | daily check script |
 | Trade Analysis (Gregorian 30th) | 5dd839c2789a | 30th of each month |
+| Gold Bubble Report | cd929bbd87c2 | 12:30 Iran, Sat-Wed only |
 
 Removed: Medicine Reminder (one-shot, executed and auto-deleted)
+
+### Cron Delivery Formatting
+Suppress technical headers with: `hermes config set cron.wrap_response false`
+This removes the "Cronjob Response: ..." header and delivers clean content only.
+
+### Self-Improvement Notifications
+Suppress background review notifications with: `hermes config set display.memory_notifications off`
+The reviews still run silently; only the chat notifications are suppressed.
+
+### Gold Bubble Report Script
+Location: `~/.hermes/scripts/gold-bubble-report.py`
+Queries fundbase.ir Supabase API for gold fund bubble data.
+Outputs top positive and bottom negative bubbles (max 5 each).
+Cron: `0 9 * * 6,0,1,2,3` (12:30 Iran, Sat-Wed market days)
 
 ### Financial Calendar Approach
 Daily scan at 10AM: if no high-impact USD/EUR events → "no events today" and stop.
@@ -53,4 +68,5 @@ Entertainment news prompt was created in English to avoid U+200C injection block
 - Role: Forex & crypto trader (PropFundingX)
 - Interests: Financial markets, Iran-US war impact on markets, foreign cinema
 - Language: Farsi
-- Style: Concise responses
+- Style: Concise, organized with emojis, no unnecessary English sentences
+- Max list items: 5 (unless specified otherwise)
