@@ -62,6 +62,14 @@ LLM-driven cron jobs (no_agent=False) fail with "has no model configured" if mod
 Include: memories/, skills/, cron/, sessions/, config.yaml, SOUL.md, kanban.db
 Exclude: state.db (tokens), auth.json, .env, cache/, logs/, audio_cache/, image_cache/
 
+## SPA Data Extraction Pattern
+
+For React/Vue SPAs backed by Supabase (e.g. fundbase.ir, Iranian financial platforms):
+1. Download JS bundle from the site
+2. Extract Supabase project ID and anon key from the JS
+3. Query REST API directly with the credentials
+- See `references/supabase-spa-extraction.md` for full worked example
+
 ## News Monitoring Pattern
 
 1. Create LLM-driven cron job (no_agent=False)
@@ -69,7 +77,18 @@ Exclude: state.db (tokens), auth.json, .env, cache/, logs/, audio_cache/, image_
 3. Add conditional: "If nothing new, stay silent"
 4. Use deliver="origin" to send to user chat
 5. Schedule by urgency: breaking news every 1h, general every 6-24h
+6. For financial events: daily scan at 10AM, auto-create one-time alerts 1h before events
+7. For market-specific monitoring (e.g. Iran TSE): schedule only on market days — Iran market runs Saturday–Wednesday (Thu/Fri off). Use cron `0 9 * * 6,0,1,2,3` for "12:30 Iran time, market days only"
+
+## Financial Calendar Smart Alert Pattern
+
+Instead of polling every hour, use a single daily scan that creates sub-alerts:
+1. Daily at 10AM Iran: full scan of economic calendar
+2. If no events → report "nothing today" and stop
+3. If events exist between market hours (11:00–19:00 Iran) → create one-time cron jobs (`repeat=1`) 1 hour before each event
+4. Requires `enabled_toolsets=["terminal","cron"]` so agent can create sub-cron jobs
 
 ## Reference Files
 
 - `references/session-patterns.md` — Specific session setups, cron job IDs, and user preferences.
+- `references/supabase-spa-extraction.md` — How to extract data from React SPAs backed by Supabase.
