@@ -77,11 +77,88 @@ site%3Abbc.com+Iran+war+latest+July+2026
 Iran US war today&tf=pd
 ```
 
+## Embedded JSON Extraction (primary technique for blocked sites)
+
+When news sites like Reuters block direct scraping (CAPTCHA walls, JS-only rendering), Brave Search's HTML embeds a large JavaScript data object with structured article metadata. This is the most reliable workaround — no need to visit the blocked site at all.
+
+### Data structure
+
+Each search result in the embedded data contains:
+```
+{
+  title: "Article Headline",
+  url: "https://www.reuters.com/...",
+  page_age: "2026-07-28T15:55:04",    // ISO 8601 — most precise date available
+  description: "Article meta description...",
+  full_title: "Full Title | Reuters",
+  age: "2 days ago",                    // relative — less useful
+  article: {
+    author: [{ name: "Author Name", url: "..." }],
+    date: "Jul 28, 2026",              // human-readable
+    publisher: { name: "Reuters" },
+    isAccessibleForFree: false
+  }
+}
+```
+
+**Key insight:** The `page_age` field is an ISO 8601 timestamp, far more precise than the UI's relative labels ("2 days ago"). Use it for date-based filtering.
+
+### Extraction code
+
+```python
+import re
+
+with open('/tmp/brave.html', 'r', errors='ignore') as f:
+    html = f.read()
+
+# The data object uses JS syntax (void 0, unquoted keys), not JSON.
+# Use page_age as anchor since it's unique to article results.
+articles = re.findall(
+    r'\{title:"([^"]*)",url:"([^"]*)",.*?page_age:"([^"]*)".*?description:"([^"]*)"',
+    html
+)
+
+for title, url, page_age, desc in articles:
+    # Filter to target domain and date
+    if 'reuters' in url and '2026-07-28' in page_age:
+        clean_desc = desc.replace('\\u003Cstrong>', '').replace('\\u003C/strong>', '')
+        print(f"TITLE: {title}")
+        print(f"URL: {url}")
+        print(f"DATE: {page_age}")
+        print(f"DESC: {clean_desc[:300]}")
+        print()
+```
+
+### Greedy regex caveat
+
+The `.*?` between `url:` and `page_age:` can match across objects if results are close together. If you get wrong matches, use a more specific pattern or extract the data in two passes:
+1. First pass: extract all `title:"...",url:"..."` pairs
+2. Second pass: extract all `page_age:"..."` values
+3. Zip them together (they appear in the same order)
+
+## URL Slug Date Detection
+
+Many news sites encode publication dates in article URL slugs:
+- Reuters: `.../article-slug-2026-07-28/`
+- AP News: `.../article-slug-2026-07-28/`
+- BBC: `.../YYYY-MM-DD-article-slug`
+
+**Use this for date-scoped searches:**
+```bash
+# Find Reuters articles about Iran from July 28, 2026
+curl -sL -A 'Mozilla/5.0 ...' \
+  "https://search.brave.com/search?q=site%3Areuters.com+iran+us+2026-07-28&source=web" \
+  > /tmp/brave.html
+```
+
+Then filter results by checking both the URL slug AND the `page_age` field from the embedded JSON. The URL slug date is the article's canonical date; `page_age` may differ slightly due to updates/republishing.
+
 ## Parallel Strategy
 
 When searching for current events, run Brave Search in parallel with:
 1. Wikipedia API (for structured/background context)
 2. Brave Search general (for broad coverage)
 3. Brave Search site-scoped (for specific outlet coverage)
+4. Brave Search date-scoped (for specific date coverage)
 
 This catches both encyclopedic context and breaking news that different sources surface.
