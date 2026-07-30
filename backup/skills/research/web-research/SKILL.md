@@ -278,6 +278,62 @@ Bing *web* search (non-news) returns JS-heavy HTML, but title extraction and con
 ### 6. RSS Feeds — Definitive Date-Verified Research
 RSS feeds bypass JS rendering, CAPTCHAs, and search-engine blocking. They contain `<pubDate>` fields that let you **authoritatively confirm what was (and was not) published on a specific date** — the most reliable technique when the user asks "find articles from DATE X."
 
+#### 6a. Google News RSS — Cross-Source Aggregator (TOP PRIORITY for date-specific research)
+Google News RSS is the **single most reliable technique** for finding articles from a specific date across ALL news sources — including ones that block direct access (Reuters, Al Jazeera). It aggregates articles from hundreds of outlets, includes `<pubDate>` for precise date filtering, and works without any CAPTCHA.
+
+**URL pattern:**
+```
+https://news.google.com/rss/search?q=QUERY&hl=en-US&gl=US&ceid=US:en
+```
+
+**Date-scoped queries** — append `when:Xd` to filter by recency:
+```
+https://news.google.com/rss/search?q=Iran+US+war+when:3d&hl=en-US&gl=US&ceid=US:en
+```
+- `when:1d` = last 24 hours
+- `when:2d` = last 2 days
+- `when:3d` = last 3 days (best for "today or yesterday" research)
+
+**Source-scoped queries** — add source name or `site:` operator:
+```
+https://news.google.com/rss/search?q=reuters+Iran+US+July+28+2026&hl=en-US&gl=US&ceid=US:en
+https://news.google.com/rss/search?q=site:reuters.com+Iran+US+when:3d&hl=en-US&gl=US&ceid=US:en
+```
+
+**Parsing Google News RSS for date-filtered research:**
+```bash
+curl -s -A 'Mozilla/5.0 ...' "https://news.google.com/rss/search?q=QUERY+when:3d&hl=en-US&gl=US&ceid=US:en" > /tmp/gn_rss.xml && python3 -c "
+import re
+with open('/tmp/gn_rss.xml') as f:
+    xml = f.read()
+items = re.findall(r'<item>.*?</item>', xml, re.DOTALL)
+for item in items:
+    title = re.search(r'<title>(.*?)</title>', item)
+    pubdate = re.search(r'<pubDate>(.*?)</pubDate>', item)
+    source = re.search(r'<source[^>]*>(.*?)</source>', item)
+    if title and pubdate:
+        p = pubdate.group(1)
+        if '28 Jul 2026' in p:  # filter to target date
+            print(f'[{source.group(1) if source else \"?\"}] {title.group(1)}')
+            print(f'  Date: {p}')
+"
+```
+
+**Why this is the best technique:**
+- Works for ALL outlets (Reuters, BBC, AP, Al Jazeera, NYT, etc.) in one query
+- Returns `<source>` tag identifying which outlet published the article
+- `<pubDate>` uses RFC 2822 format with precise timestamps
+- Returns up to 100 items per query (enough for most daily research)
+- No CAPTCHA, no JS rendering needed
+
+**When to use Google News RSS vs. individual RSS feeds:**
+- Use Google News RSS **first** when you need to search across multiple outlets or find articles from a specific date
+- Use individual outlet RSS feeds when you need to confirm absence of articles (Google News may not index everything)
+- Use individual RSS feeds for entertainment/industry-specific outlets not well-indexed by Google News
+
+#### 6b. Outlet-Specific RSS Feeds
+Individual outlet RSS feeds are useful for confirming absence and for outlets not well-indexed by Google News.
+
 **Known working RSS feed URLs:**
 | Outlet | RSS URL |
 |--------|---------|
@@ -287,6 +343,9 @@ RSS feeds bypass JS rendering, CAPTCHAs, and search-engine blocking. They contai
 | Al Jazeera | `https://www.aljazeera.com/xml/rss/all.xml` |
 | AP News | `https://rsshub.app/apnews/topics/world-news` (via RSSHub) |
 | Reuters | `https://www.reutersagency.com/feed/` (may be restricted) |
+| **Deadline** | `https://deadline.com/feed/` |
+| **Variety** | `https://variety.com/feed/` |
+| **Hollywood Reporter** | `https://www.hollywoodreporter.com/feed/` |
 
 **Fetching and parsing an RSS feed for date-filtered research:**
 ```bash
@@ -315,10 +374,7 @@ for item in items:
 **Al Jazeera specifics:** Al Jazeera's RSS feed may only show the most recent ~20-30 articles. For older dates, you may need to use their tag pages (`/tag/iran/`) or the Wayback Machine.
 
 **Supplementary: Direct site RSS/API**
-Some other sites expose RSS feeds without CAPTCHA:
-- Variety RSS, Deadline RSS, THR RSS
-- Site-specific search endpoints
-
+Entertainment sites (Variety, Deadline, THR) expose RSS feeds without CAPTCHA — see table above. These are the **primary** method for entertainment news date-filtered research, not a supplement. Direct tag/homepage scraping of these sites fails (JS-rendered).
 ### 7. Multi-query deduplication (for comprehensive coverage)
 When researching a broad topic, run multiple Bing News queries with different keyword angles and deduplicate by URL. This catches articles that different queries surface differently.
 
@@ -385,6 +441,14 @@ grep -oiP '(Variety|Deadline|Hollywood Reporter|THR)[^"]{0,200}' page.html
 20. **Al Jazeera `/tag/` pages embed article dates in `<span>` elements** — Dates appear as `<span class="screen-reader-text">Published On 29 Jul 2026</span>` inside `<div class="gc__date">`. Articles are in `<article class="gc">` elements. Titles are in `<h3 class="gc__title"><a><span>TITLE</span>`. URLs follow the pattern `/news/YYYY/M/DD/SLUG`. Parse with regex on the raw HTML — no JS needed.
 21. **When user asks "find articles from DATE X" and you find nothing, confirm the gap via RSS** — Don't report "nothing found" based only on failed search queries. Fetch the outlet's RSS feed and verify no items have that date. If the feed genuinely has no entries for that date, the outlet published nothing. If the feed only covers recent days, note the limitation. False negatives from bad searches erode user trust more than a genuine "no articles published that day" finding.
 22. **`curl | python3` security scan blocks appear in terminal() too** — The security scanner flags `curl ... | python3 -c "..."` patterns. Always use the two-step approach: `curl ... > /tmp/file.html && python3 -c "..."` where the python reads from the file. The `&&` form typically passes smart approval.
+
+23. **Google News RSS `when:` parameter is the key to date-specific research** — When the user asks "find articles from DATE X", the first thing to try is Google News RSS with `when:3d` (or appropriate range). The `<pubDate>` in RSS items lets you filter to the exact target date. Without this technique, you'll waste many calls trying to scrape individual sites only to find articles from wrong dates. Start here, then confirm with outlet-specific RSS feeds.
+
+24. **Google News RSS returns up to 100 items** — For a single day's news, 100 items is usually enough. But for very high-volume topics (e.g., a major war), some articles may be missed. Combine with outlet-specific RSS for comprehensive coverage.
+
+25. **Al Jazeera blocks search but tag pages work** — Al Jazeera's `/search?q=...` returns Access Denied. But `/tag/iran/` and individual article pages work via curl. The RSS feed (`/xml/rss/all.xml`) also works but only shows ~20-30 most recent items.
+
+26. **Reuters blocks all direct access** — Cloudflare CAPTCHA on every page. The only reliable way to get Reuters articles is via Google News RSS, Brave Search with `site:`, or other aggregators. Don't waste time trying different User-Agent strings or curl options.
 
 ## When to Use vs. Other Skills
 

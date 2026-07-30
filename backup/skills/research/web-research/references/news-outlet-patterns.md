@@ -85,6 +85,23 @@ URL: `https://apnews.com/hub/TOPIC` (e.g., `/hub/iran`)
 ### Search Page
 AP search is **JS-rendered** — do NOT use. Use hub pages.
 
+### Article Metadata Extraction (for exact dates)
+AP News articles embed `article:published_time` and `article:modified_time` in `<meta>` tags. This is the **most reliable** way to confirm exact publication dates — more reliable than hub page timestamps.
+
+```python
+import re
+with open('/tmp/ap_article.html') as f:
+    html = f.read()
+pub = re.findall(r'article:published_time.*?content="([^"]+)"', html)
+mod = re.findall(r'article:modified_time.*?content="([^"]+)"', html)
+title = re.findall(r'og:title.*?content="([^"]+)"', html)
+print(f'Title: {title[0] if title else "N/A"}')
+print(f'Published: {pub[0] if pub else "N/A"}')  # ISO 8601, e.g. 2026-07-28T23:27:30
+print(f'Modified: {mod[0] if mod else "N/A"}')
+```
+
+**Why this matters:** AP News hub page `data-timestamp` values may reflect when an article was placed on the hub, not the original publish date. For date-filtered research, always verify via article-level metadata.
+
 ---
 
 ## Reuters
@@ -96,8 +113,25 @@ Reuters blocks curl with Cloudflare CAPTCHA (~771 bytes response). Use Brave Sea
 
 ## General Pattern for Date-Filtered Research
 
-1. **RSS feed first** — Check if the outlet's RSS covers the target date
-2. **Tag/hub pages** — Parse article cards for dates
-3. **JSON-LD from individual articles** — For exact date verification
-4. **Brave Search `site:`** — For outlets that block direct scraping
-5. **Confirm negative results** — If nothing found, verify via RSS that the outlet genuinely published nothing
+1. **Google News RSS first** — Search across ALL outlets with `when:Xd` date filter. This is the single most reliable technique for finding articles from a specific date.
+2. **RSS feed confirmation** — Check individual outlet RSS feeds to confirm presence/absence of articles.
+3. **Tag/hub pages** — Parse article cards for dates.
+4. **JSON-LD from individual articles** — For exact date verification.
+5. **Brave Search `site:`** — For outlets that block direct scraping.
+6. **Confirm negative results** — If nothing found, verify via RSS that the outlet genuinely published nothing.
+
+---
+
+## Google News RSS — Cross-Source Date-Verified Research
+
+The most reliable technique for finding articles from a specific date across all sources.
+
+**URL:** `https://news.google.com/rss/search?q=QUERY+when:Xd&hl=en-US&gl=US&ceid=US:en`
+
+**Source-scoped:** `site:reuters.com+Iran+US` or just `reuters+Iran+US`
+
+**Returns:** Up to 100 `<item>` elements with `<title>`, `<pubDate>` (RFC 2822), `<source>` (outlet name), and `<link>` (article URL).
+
+**Date filtering:** Check `<pubDate>` for target date string (e.g., `'28 Jul 2026' in pubdate`).
+
+**Limitations:** Google News may not index every article from every outlet. For comprehensive coverage, combine with outlet-specific RSS feeds.
