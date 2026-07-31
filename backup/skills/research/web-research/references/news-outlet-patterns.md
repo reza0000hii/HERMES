@@ -22,8 +22,60 @@ if m:
     print(data.get('description'))
 ```
 
-### Search Page
-BBC search (`/search?q=...`) returns server-rendered HTML with article cards.
+### Search Page (BEST TECHNIQUE for BBC)
+BBC search (`/search?q=...`) embeds a **large `__NEXT_DATA__` JSON object** in a `<script id="__NEXT_DATA__">` tag. This contains ALL search results as structured data — titles, descriptions, timestamps, images, and metadata. Far more reliable than parsing HTML elements.
+
+**Extract search results from the embedded JSON:**
+```python
+import re, json
+from datetime import datetime, timezone
+
+with open('/tmp/bbc_search.html') as f:
+    html = f.read()
+
+# Extract __NEXT_DATA__ JSON
+m = re.search(r'<script id="__NEXT_DATA__"[^>]*>(.*?)</script>', html, re.DOTALL)
+data = json.loads(m.group(1))
+
+# Navigate to search results (path may vary)
+page_data = data['props']['pageProps']['page']
+# Find the key that contains results (first key starting with '/?search' or similar)
+for key, val in page_data.items():
+    if isinstance(val, dict) and 'results' in val:
+        results = val['results']
+        break
+
+for r in results:
+    title = r['title']
+    desc = r.get('description', '')
+    # Timestamps are in EPOCH MILLISECONDS
+    first_updated = datetime.fromtimestamp(r['metadata']['firstUpdated']/1000, tz=timezone.utc)
+    last_updated = datetime.fromtimestamp(r['metadata']['lastUpdated']/1000, tz=timezone.utc)
+    print(f"Title: {title}")
+    print(f"Published: {first_updated.strftime('%Y-%m-%d %H:%M UTC')}")
+    print(f"Description: {desc[:200]}")
+```
+
+**Key fields per result:**
+- `title` — article headline
+- `description` — meta description
+- `href` — article URL (e.g., `/news/articles/c70g6y24d76o`)
+- `metadata.firstUpdated` — **epoch milliseconds** of first publication
+- `metadata.lastUpdated` — **epoch milliseconds** of last update
+- `metadata.contentType` — `"article"`, `"episode"`, etc.
+- `metadata.topics` — list of topic tags (e.g., `["World"]`)
+
+**Converting timestamps:** BBC uses milliseconds, not seconds. Always divide by 1000 before `datetime.fromtimestamp()`. To filter by date:
+```python
+target_start = datetime(2026, 7, 28, 0, 0, 0, tzinfo=timezone.utc)
+target_end = datetime(2026, 7, 29, 0, 0, 0, tzinfo=timezone.utc)
+for r in results:
+    dt = datetime.fromtimestamp(r['metadata']['firstUpdated']/1000, tz=timezone.utc)
+    if target_start <= dt < target_end:
+        print(f"TARGET DATE: {r['title']}")
+```
+
+**Fallback — HTML element parsing (less reliable):**
 Headlines in `<h2 data-testid="card-headline">`, dates in `<span data-testid="card-metadata-lastupdated">`.
 Article URLs follow pattern `/news/articles/SLUG` or `/news/videos/SLUG`.
 
@@ -63,6 +115,12 @@ for i, (href, title) in enumerate(articles):
 
 ### Search Page
 Al Jazeera search (`/search?q=...`) is **JS-rendered** — returns only footer/boilerplate via curl. Do NOT use. Use tag pages or RSS instead.
+
+### Pagination Pitfall
+Al Jazeera tag pages (`/tag/iran/?page=2`, `?page=3`, etc.) **do NOT actually paginate** — all pages return the identical set of ~15-20 most recent articles. The `?page=N` parameter is ignored server-side. This means you **cannot** access older articles via tag pages. For older dates, rely on:
+1. Google News RSS with date filters
+2. Direct article URL guessing (unreliable)
+3. Confirming absence via the RSS feed's date range
 
 ### Live Blogs
 URL pattern: `/news/liveblog/YYYY/M/DD/SLUG`

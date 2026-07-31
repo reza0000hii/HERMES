@@ -41,19 +41,131 @@ grep -oiP '(in development|in production|filming|post-production|wrapped)[^.]{0,
 grep -oiP '(Variety|Deadline|Hollywood Reporter|THR|Entertainment Weekly)[^"]{0,200}'
 ```
 
-## Direct Entertainment News Site Scraping
+## Entertainment News Site Access — What Works and What Doesn't
 
-When searching for TV show / film franchise news, skip search engines and go **directly** to entertainment news tag/hub pages. These are server-rendered, CAPTCHA-free, and return article titles reliably.
+### ⚠️ Variety.com is fully JS-rendered — do NOT scrape pages directly
 
-**Tag page URL patterns:**
+Variety.com's HTML pages (homepage, section pages, tag pages, article pages) return **empty/minimal HTML** via curl — only CSS/JS boilerplate. Tag pages like `variety.com/t/house-of-the-dragon/` and section pages like `variety.com/v/tv/` are NOT server-rendered. Do not waste time trying to parse them.
 
-| Site | URL Pattern | Notes |
-|------|-------------|-------|
-| Variety | `https://variety.com/t/SHOW-SLUG/` | Slug uses hyphens (e.g., `house-of-the-dragon`) |
-| Deadline | `https://deadline.com/tag/SHOW-SLUG/` | Uses `/tag/` prefix |
-| Hollywood Reporter | `https://www.hollywoodreporter.com/t/SHOW-SLUG/` | Same as Variety pattern |
+**What DOES work for Variety:**
+1. **WordPress RSS feed** (`https://variety.com/feed/`) — returns full article titles, descriptions, and `<pubDate>` for the most recent ~10 articles. Works perfectly via curl. Filter by date in post-processing.
+2. **Google News RSS** with `site:variety.com` — finds articles across all dates, returns `<source>` tag. Best for date-specific research.
+3. **Individual article URLs** — return 301 redirects (not 404) for valid articles, so you can verify URLs exist but can't extract content.
 
-**Parsing tag pages:** Extract `<h2>` and `<h3>` titles that contain the show name. These are article headlines — follow up by fetching individual articles for details.
+### Deadline and Hollywood Reporter — RSS + Homepage Scraping
+
+| Site | Homepage works? | Tag/archive page? | RSS feed works? | Article meta? | Google News `site:` |
+|------|----------------|-------------------|-----------------|--------------|---------------------|
+| **Deadline** | **YES** — `deadline.com/` and `/2026/07/` archives return server-rendered article blocks with `<h2>` titles, `<time datetime="...">` dates, and full URLs | Tag pages (`/tag/SHOW-SLUG/`) — sometimes server-rendered, test first | `deadline.com/feed/` — works, ~15 items, full `<pubDate>` | Yes — `og:title`, `og:description`, `article:published_time` all extractable | Yes |
+| **Hollywood Reporter** | JS-rendered | JS-rendered | `hollywoodreporter.com/feed/` — works, ~10 items, full `<pubDate>` | Yes — meta tags server-rendered even though body is JS | Yes |
+| **Variety** | JS-rendered — DO NOT USE | JS-rendered — DO NOT USE | `variety.com/feed/` — works, primary method | Limited | Yes, primary for date-specific |
+
+**Deadline homepage scraping detail:** The Deadline homepage (`deadline.com/`) and monthly archive pages (`deadline.com/2026/07/`) return server-rendered HTML containing:
+- `<article>` blocks or `<h2>`/`<h3>` tags with article titles
+- `<time datetime="2026-07-31T05:09:00-07:00">` timestamps (ISO 8601 with timezone)
+- Full article URLs in `<a href="https://deadline.com/2026/07/...">` links
+- Article counts of 15-25 per page, with dates clearly visible
+
+To extract today's articles from Deadline's archive page:
+```bash
+curl -sL -A 'Mozilla/5.0' "https://deadline.com/2026/07/" > /tmp/deadline_archive.html
+python3 -c "
+import re, html
+with open('/tmp/deadline_archive.html') as f:
+    c = f.read()
+links = re.findall(r'href=\"(https://deadline\.com/2026/07/[^\"]+)\"', c)
+seen = set()
+for url in links:
+    if url not in seen and '#' not in url:
+        seen.add(url)
+        print(url)
+"
+```
+
+**`article:published_time` meta tag — best for date confirmation:** Individual article pages on Deadline and THR expose `<meta property="article:published_time" content="2026-07-31T05:09:00+00:00">` which gives ISO 8601 timestamps with timezone. More precise than RSS `<pubDate>` and always available server-side. Pattern:
+```bash
+curl -sL -A 'Mozilla/5.0' "https://deadline.com/ARTICLE_URL" 2>/dev/null | \
+  python3 -c "
+import sys, re, html as h
+c = sys.stdin.read()
+title = re.search(r'og:title.*?content=\"([^\"]+)\"', c)
+desc = re.search(r'og:description.*?content=\"([^\"]+)\"', c)
+date = re.search(r'article:published_time.*?content=\"([^\"]+)\"', c)
+print(f'Title: {h.unescape(title.group(1)) if title else \"N/A\"}')
+print(f'Desc: {h.unescape(desc.group(1))[:300] if desc else \"N/A\"}')
+print(f'Date: {date.group(1) if date else \"N/A\"}')
+"
+```
+
+**Confirmed:** Both Deadline and THR RSS feeds return server-rendered `<item>` blocks with accurate `<pubDate>` timestamps in RFC 2822 format (e.g., `Fri, 31 Jul 2026 05:09:00 +0000`). Filter by target date string (e.g., `'31 Jul 2026'`) in post-processing.
+
+### Multi-source parallel RSS pattern for entertainment research
+
+When researching entertainment news from multiple outlets on a specific date, run these in parallel:
+
+```bash
+# 1. Fetch RSS feeds from all target outlets simultaneously
+curl -s -A 'UA' "https://deadline.com/feed/" > /tmp/deadline_rss.xml
+curl -s -A 'UA' "https://www.hollywoodreporter.com/feed/" > /tmp/thr_rss.xml
+curl -s -A 'UA' "https://variety.com/feed/" > /tmp/variety_rss.xml
+
+# 2. Fetch Google News RSS for each outlet × topic combination
+#    Use when:3d to scope to recent articles, add topic keywords
+curl -s -A 'UA' \
+  "https://news.google.com/rss/search?q=site:deadline.com+TOPIC+when:3d&hl=en-US&gl=US&ceid=US:en" \
+  > /tmp/gn_deadline_TOPIC.xml
+```
+
+Then parse all feeds, filter by date, and deduplicate by headline. The RSS feeds give the most complete "what they published today" picture; Google News RSS adds cross-reference coverage and catches articles the RSS feed may have dropped.
+
+### Primary technique: RSS feeds + Google News RSS
+
+For entertainment research, **start with RSS feeds**, not page scraping:
+
+```bash
+# 1. Check the outlet's RSS feed for today's articles
+curl -s -A 'Mozilla/5.0' "https://variety.com/feed/" > /tmp/variety_feed.xml
+python3 -c "
+import re, html
+with open('/tmp/variety_feed.xml') as f:
+    xml = f.read()
+items = re.findall(r'<item>(.*?)</item>', xml, re.DOTALL)
+for item in items:
+    title = re.search(r'<title>(.*?)</title>', item)
+    pubdate = re.search(r'<pubDate>(.*?)</pubDate>', item)
+    desc = re.search(r'<description><!\[CDATA\[(.*?)\]\]></description>', item)
+    if title and pubdate and '31 Jul 2026' in pubdate.group(1):
+        t = html.unescape(title.group(1))
+        d = html.unescape(desc.group(1))[:300] if desc else ''
+        print(f'TITLE: {t}')
+        print(f'DESC: {d}')
+        print()
+"
+
+# 2. Cross-reference with Google News RSS (site-scoped)
+curl -s -A 'Mozilla/5.0' \
+  "https://news.google.com/rss/search?q=site:variety.com+house+of+the+dragon&hl=en-US&gl=US&ceid=US:en" \
+  > /tmp/gn_variety.xml
+python3 -c "
+import re, html
+with open('/tmp/gn_variety.xml') as f:
+    xml = f.read()
+items = re.findall(r'<item>(.*?)</item>', xml, re.DOTALL)
+for item in items:
+    title = re.search(r'<title>(.*?)</title>', item)
+    pubdate = re.search(r'<pubDate>(.*?)</pubDate>', item)
+    source = re.search(r'<source[^>]*>(.*?)</source>', item)
+    if title and pubdate and '31 Jul 2026' in pubdate.group(1):
+        print(f'[{html.unescape(source.group(1)) if source else \"?\"}] {html.unescape(title.group(1))}')
+        print(f'  Date: {pubdate.group(1)}')
+"
+```
+
+**Why both?** The Variety RSS feed only has ~10 items (latest articles). Google News RSS indexes more articles but may miss some. Using both gives comprehensive coverage.
+
+### Deadline tag page scraping (when it works)
+
+Deadline's tag pages sometimes return server-rendered HTML. Test first, then parse:
 
 ```bash
 curl -sL -A 'Mozilla/5.0' "https://deadline.com/tag/house-of-the-dragon/" | \
@@ -61,7 +173,31 @@ curl -sL -A 'Mozilla/5.0' "https://deadline.com/tag/house-of-the-dragon/" | \
   sed 's/<[^>]*>//g' | head -10
 ```
 
-**Individual article scraping:** Entertainment articles often contain structured data (episode schedules, viewership numbers) in `<p>` tags. Extract with keyword searches:
+**If empty HTML is returned** (JS-rendered), fall back to Google News RSS with `site:deadline.com`.
+
+### Meta description extraction for article summaries
+
+Even on JS-heavy sites like THR and Deadline, `<meta name="description">` and `<meta property="og:description">` tags are server-rendered and always available via curl. This is the fastest way to get a 1-sentence summary of an article without parsing body text:
+
+```bash
+curl -s -A 'Mozilla/5.0 ...' "https://deadline.com/ARTICLE-URL" 2>/dev/null | \
+  python3 -c "
+import sys, re
+content = sys.stdin.read()
+desc = re.findall(r'<meta[^>]*name=\"description\"[^>]*content=\"([^\"]+)\"', content)
+if not desc:
+    desc = re.findall(r'<meta[^>]*property=\"og:description\"[^>]*content=\"([^\"]+)\"', content)
+title = re.findall(r'<meta[^>]*property=\"og:title\"[^>]*content=\"([^\"]+)\"', content)
+print('TITLE:', title[0] if title else 'N/A')
+print('DESC:', desc[0] if desc else 'N/A')
+"
+```
+
+**Note:** THR article URLs are not predictable from headlines — always get the exact URL from the RSS feed or Google News RSS `<link>` tag. Guessed URLs return 404/N/A.
+
+### Individual article scraping — keyword extraction from body text
+
+Entertainment articles on working sites often contain structured data in `<p>` tags. Extract with keyword searches:
 ```bash
 curl -sL -A 'Mozilla/5.0' "https://deadline.com/ARTICLE-URL" | \
   python3 -c "

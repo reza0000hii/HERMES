@@ -420,7 +420,7 @@ grep -oiP '(Variety|Deadline|Hollywood Reporter|THR)[^"]{0,200}' page.html
 
 1. **Google/DDG/Bing CAPTCHA walls** — Don't waste multiple retries. Go to Wikipedia API or direct site scraping immediately.
 2. **`execute_code` blocks `curl | python3` pipes** — Security scan flags `curl | python3` as "pipe to interpreter". Workaround: save curl output to a temp file first, then run python3 on the file separately. Pattern: `curl ... > /tmp/result.html && python3 -c "parse_file('/tmp/result.html')"`. In `terminal()` calls, the `&&` approach often gets auto-approved by smart approval.
-3. **DDG HTML endpoint fails** — `html.duckduckgo.com` often returns zero results via curl even with a browser UA, or times out entirely (>30s with no response). Don't loop on it; fall through to Brave/Bing or direct site scraping immediately.
+3. **DDG HTML endpoint escalates to CAPTCHA after first use** — `html.duckduckgo.com` returns results on the first request but triggers a bot-detection CAPTCHA ("bots use DuckDuckGo too") on subsequent requests from the same IP. You get one free shot; if you need multiple queries, switch to Brave/Bing immediately after the first DDG response. Don't retry — the CAPTCHA won't resolve.
 4. **Regex in curl commands gets flagged by security scan** — Patterns like `grep -oP 'https://apnews\.com/...'` trigger hostname validation errors. Use separate grep commands with simpler patterns, or extract URLs first then filter.
 5. **JS-rendered article pages hide body text** — Many news sites (AP News, CNN) render article content via JavaScript. The `<body>` HTML contains only CSS/JS boilerplate. Use **JSON-LD extraction** (`grep -oP '"headline":"[^"]*"'`) to get structured metadata instead.
 6. **Wikipedia `action=parse` returns wikitext, not plain text** — Use `action=query&prop=extracts&explaintext=true` for readable text. Use `action=parse` only when you need tables/lists (wikitext format).
@@ -449,6 +449,18 @@ grep -oiP '(Variety|Deadline|Hollywood Reporter|THR)[^"]{0,200}' page.html
 25. **Al Jazeera blocks search but tag pages work** — Al Jazeera's `/search?q=...` returns Access Denied. But `/tag/iran/` and individual article pages work via curl. The RSS feed (`/xml/rss/all.xml`) also works but only shows ~20-30 most recent items.
 
 26. **Reuters blocks all direct access** — Cloudflare CAPTCHA on every page. The only reliable way to get Reuters articles is via Google News RSS, Brave Search with `site:`, or other aggregators. Don't waste time trying different User-Agent strings or curl options.
+
+27. **Variety.com, Hollywood Reporter, and many entertainment sites are fully JS-rendered** — Section pages (`/v/tv/`), tag pages (`/t/house-of-the-dragon/`), and article pages return empty/minimal HTML via curl (only CSS/JS boilerplate). Do NOT attempt to scrape these directly. Use RSS feeds (`variety.com/feed/`) and Google News RSS with `site:` operator instead. See `references/entertainment-franchise-patterns.md` for the correct approach per outlet.
+
+28. **Deadline.com homepage and archive pages ARE server-rendered** — Unlike Variety/THR, Deadline's homepage (`deadline.com/`), monthly archives (`deadline.com/2026/07/`), and tag pages often return server-rendered HTML with `<article>` blocks, `<h2>` titles, `<time datetime="...">` timestamps, and full article URLs. Always test first, but Deadline is one of the few entertainment news sites where direct scraping works. See `references/entertainment-franchise-patterns.md` for the extraction pattern.
+
+29. **IMDb News is effectively empty** — `imdb.com/news/` returns only ~160 bytes of HTML via curl (no usable content). Do NOT include IMDb as a news source for entertainment research. Use Deadline, THR, Variety, Collider, and Screen Rant instead.
+
+30. **`article:published_time` meta tag is the most reliable way to confirm exact publication date** — When the user asks "what was published TODAY", fetch each candidate article URL and extract `<meta property="article:published_time" content="...">` to get ISO 8601 timestamps with timezone. This is more precise than RSS `<pubDate>` and always available on server-rendered article pages. Particularly useful on Deadline and THR where other metadata extraction methods work.
+
+31. **BBC `__NEXT_DATA__` timestamps are EPOCH MILLISECONDS, not seconds** — The embedded JSON in BBC search pages uses millisecond timestamps (e.g., `1785281250555`). Always divide by 1000 before passing to `datetime.fromtimestamp()`. Forgetting this produces dates in the year 56,000+. Also note BBC uses `firstPublished` vs `lastUpdated` — use `firstPublished` (or `metadata.firstUpdated` in search results) for the original publication date.
+
+32. **For date-specific research, always start with Google News RSS, NOT direct site scraping** — Google News RSS (`news.google.com/rss/search?q=QUERY+when:Xd`) aggregates all outlets with `<pubDate>` for precise filtering. I wasted 15+ tool calls scraping BBC search and Al Jazeera tag pages when Google News RSS would have returned the answer in 1-2 calls. The skill already documents this (pitfall #23) but it bears repeating: check Google News RSS FIRST for any "find articles from DATE X" task.
 
 ## When to Use vs. Other Skills
 
