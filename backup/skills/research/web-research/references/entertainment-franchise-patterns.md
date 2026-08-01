@@ -57,8 +57,8 @@ Variety.com's HTML pages (homepage, section pages, tag pages, article pages) ret
 | Site | Homepage works? | Tag/archive page? | RSS feed works? | Article meta? | Google News `site:` |
 |------|----------------|-------------------|-----------------|--------------|---------------------|
 | **Deadline** | **YES** — `deadline.com/` and `/2026/07/` archives return server-rendered article blocks with `<h2>` titles, `<time datetime="...">` dates, and full URLs | Tag pages (`/tag/SHOW-SLUG/`) — sometimes server-rendered, test first | `deadline.com/feed/` — works, ~15 items, full `<pubDate>` | Yes — `og:title`, `og:description`, `article:published_time` all extractable | Yes |
-| **Hollywood Reporter** | JS-rendered | JS-rendered | `hollywoodreporter.com/feed/` — works, ~10 items, full `<pubDate>` | Yes — meta tags server-rendered even though body is JS | Yes |
-| **Variety** | JS-rendered — DO NOT USE | JS-rendered — DO NOT USE | `variety.com/feed/` — works, primary method | Limited | Yes, primary for date-specific |
+| **Hollywood Reporter** | JS-rendered | JS-rendered | `hollywoodreporter.com/feed/` — works, ~10 items, full `<pubDate>` | og:title/description yes; article:published_time NO (JS-rendered) | Yes |
+| **Variety** | JS-rendered — DO NOT USE | JS-rendered — DO NOT USE | `variety.com/feed/` — works, primary method | og:title/description sometimes; article:published_time NO (JS-rendered) | Yes, primary for date-specific |
 
 **Deadline homepage scraping detail:** The Deadline homepage (`deadline.com/`) and monthly archive pages (`deadline.com/2026/07/`) return server-rendered HTML containing:
 - `<article>` blocks or `<h2>`/`<h3>` tags with article titles
@@ -82,7 +82,7 @@ for url in links:
 "
 ```
 
-**`article:published_time` meta tag — best for date confirmation:** Individual article pages on Deadline and THR expose `<meta property="article:published_time" content="2026-07-31T05:09:00+00:00">` which gives ISO 8601 timestamps with timezone. More precise than RSS `<pubDate>` and always available server-side. Pattern:
+**`article:published_time` meta tag — works on Deadline only, NOT THR or Variety:** Only Deadline article pages are server-rendered enough to expose this meta tag reliably. THR and Variety article pages are fully JS-rendered — `article:published_time` doesn't appear in raw HTML. For THR/Variety dates, use RSS feeds exclusively. Deadline pattern:
 ```bash
 curl -sL -A 'Mozilla/5.0' "https://deadline.com/ARTICLE_URL" 2>/dev/null | \
   python3 -c "
